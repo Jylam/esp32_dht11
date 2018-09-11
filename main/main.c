@@ -14,7 +14,6 @@
 void print_temp_humid(void) {
 	setDHTPin(27);
 	printf("Temperature reading %d\n",getTemp());
-	printf("F temperature is %d\n", getFtemp());
 	printf("Humidity reading %d\n",getHumidity());
 }
 

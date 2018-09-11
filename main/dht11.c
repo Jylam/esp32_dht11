@@ -19,6 +19,8 @@
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 #include "dht11.h"
+#include "time.h"
+#include <sys/time.h>
 
 
 int humidity = 0;
@@ -27,6 +29,16 @@ int Ftemperature = 0;
 
 int DHT_DATA[3] = {0,0,0};
 int DHT_PIN = GPIO_NUM_27;
+
+uint64_t get_time_us(void) {
+	struct timeval tv = { .tv_sec = 0, .tv_usec = 0 };
+	uint32_t sec, us;
+	gettimeofday(&tv, NULL);
+	(sec) = tv.tv_sec;
+	(us) = tv.tv_usec;
+	return (sec*1000000)+us;
+}
+
 
 void setDHTPin(int PIN)
 {
@@ -49,16 +61,40 @@ void errorHandle(int response)
 	humidity = 0;
 
 }
+
+/* Send start signal from ESP32 to DHT device */
 void sendStart()
 {
-	//Send start signal from ESP32 to DHT device
 	gpio_set_direction(DHT_PIN, GPIO_MODE_OUTPUT);
+	gpio_set_level(DHT_PIN,1);
+	ets_delay_us(10000);
+
+	printf("Start sequence ...\n");
 	gpio_set_level(DHT_PIN,0);
-	//vTaskDelay(36 / portTICK_RATE_MS);
 	ets_delay_us(22000);
 	gpio_set_level(DHT_PIN,1);
-	ets_delay_us(43);
 	gpio_set_direction(DHT_PIN, GPIO_MODE_INPUT);
+	esp_err_t err = gpio_pullup_en(DHT_PIN);
+
+	uint64_t tab[100] = {0};
+	int offset = 0;
+	while(1) {
+		uint64_t t = get_time_us();
+		tab[offset++] = t;
+		int v = gpio_get_level(DHT_PIN);
+		tab[offset++] = v;
+		//printf("%llu:\tWaiting for gnd : %d\n", get_time_us(), v);
+		if(v==0) {
+			//break;
+		}
+		if(offset >= 100) {
+			int i;
+			for(i=0; i<offset-1; i+=2) {
+				printf("%llu: %llu\n", tab[i], tab[i+1]);
+			}
+		while(1) { };
+		}
+	}
 }
 
 int getData(int type)
@@ -80,14 +116,15 @@ int getData(int type)
 	//This requires waiting for 20-40 us
 	counter = 0;
 
+	uint64_t start_time = get_time_us();
 	while (gpio_get_level(DHT_PIN)==1)
 	{
-		if(counter > 40)
+		uint64_t diff = (get_time_us()-start_time);
+		if(diff > 40)
 		{
+			printf("Timeout waiting for ground (Start %llu, Diff %llu)\n", start_time, diff);
 			return DHT_TIMEOUT_ERROR;
 		}
-		counter = counter + 1;
-		ets_delay_us(1);
 	}
 	//Now that the DHT has pulled the line low,
 	//it will keep the line low for 80 us and then high for 80us
