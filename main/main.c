@@ -12,9 +12,8 @@
 #include "dht11.h"
 
 void print_temp_humid(void) {
-	setDHTPin(27);
-	printf("Temperature reading %d\n",getTemp());
-	printf("Humidity reading %d\n",getHumidity());
+	dht_set_pin(GPIO_NUM_27);
+    printf("Read: %d\n", dht_get_data());
 }
 
 

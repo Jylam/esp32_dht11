@@ -1,14 +1,6 @@
-/* DHT11 temperature sensor library
-   Usage:
-   		Set DHT PIN using  setDHTPin(pin) command
-   		getFtemp(); this returns temperature in F
-   Sam Johnston
-   October 2016
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
+/*  DHT11 driver
+ *  (c) 2018 Jylam
+ */
 
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
@@ -22,13 +14,7 @@
 #include "time.h"
 #include <sys/time.h>
 
-
-int humidity = 0;
-int temperature = 0;
-int Ftemperature = 0;
-
-int DHT_DATA[3] = {0,0,0};
-int DHT_PIN = GPIO_NUM_27;
+int dht_pin = -1;
 
 uint64_t get_time_us(void) {
 	struct timeval tv = { .tv_sec = 0, .tv_usec = 0 };
@@ -39,203 +25,84 @@ uint64_t get_time_us(void) {
 	return (sec*1000000)+us;
 }
 
-
-void setDHTPin(int PIN)
+void dht_set_pin(int pin)
 {
-	DHT_PIN = PIN;
-}
-void errorHandle(int response)
-{
-	switch(response) {
-
-		case DHT_TIMEOUT_ERROR :
-			printf("DHT Sensor Timeout!\n");
-		case DHT_CHECKSUM_ERROR:
-			printf("CheckSum error!\n");
-		case DHT_OKAY:
-			break;
-		default :
-			printf("Dont know how you got here!\n");
-	}
-	temperature = 0;
-	humidity = 0;
-
+	dht_pin = pin;
 }
 
-/* Send start signal from ESP32 to DHT device */
-void sendStart()
-{
-	gpio_set_direction(DHT_PIN, GPIO_MODE_OUTPUT);
-	gpio_set_level(DHT_PIN,1);
-	ets_delay_us(10000);
+/* Wait for HIGH or LOW on dht_pin and returns 1 (or 0 for timeout) */
+int dht_wait_for(int v, uint64_t timeout) {
+    uint64_t start_time = get_time_us();
+    uint64_t diff = 0;
 
-	printf("Start sequence ...\n");
-	gpio_set_level(DHT_PIN,0);
-	ets_delay_us(22000);
-	gpio_set_level(DHT_PIN,1);
-	gpio_set_direction(DHT_PIN, GPIO_MODE_INPUT);
-	esp_err_t err = gpio_pullup_en(DHT_PIN);
-
-	uint64_t tab[100] = {0};
-	int offset = 0;
-	while(1) {
-		uint64_t t = get_time_us();
-		tab[offset++] = t;
-		int v = gpio_get_level(DHT_PIN);
-		tab[offset++] = v;
-		//printf("%llu:\tWaiting for gnd : %d\n", get_time_us(), v);
-		if(v==0) {
-			//break;
-		}
-		if(offset >= 100) {
-			int i;
-			for(i=0; i<offset-1; i+=2) {
-				printf("%llu: %llu\n", tab[i], tab[i+1]);
-			}
-		while(1) { };
-		}
-	}
+	while(diff < timeout) {
+        if(!gpio_get_level(dht_pin)) {
+            return 1;
+        }
+        diff = (get_time_us()-start_time);
+    }
+    return 0;
 }
 
-int getData(int type)
-{
-	//Variables used in this function
-	int counter = 0;
-	uint8_t bits[5];
-	uint8_t byteCounter = 0;
-	uint8_t cnt = 7;
+/* Get a bit from DHT11
+ * Signal is LOW for 50us, then HIGH for either 26/28us (0) or 70us (1)
+ * */
+int dht_get_bit(void) {
+    /* Wait for the line to be pulled LOW by the DHT11 (max 50us) */
+    if(!dht_wait_for(0, 50)) {
+        return 0;
+    }
 
-	for (int i = 0; i <5; i++)
-	{
-		bits[i] = 0;
-	}
-
-	sendStart();
-
-	//Wait for a response from the DHT11 device
-	//This requires waiting for 20-40 us
-	counter = 0;
-
-	uint64_t start_time = get_time_us();
-	while (gpio_get_level(DHT_PIN)==1)
-	{
-		uint64_t diff = (get_time_us()-start_time);
-		if(diff > 40)
-		{
-			printf("Timeout waiting for ground (Start %llu, Diff %llu)\n", start_time, diff);
-			return DHT_TIMEOUT_ERROR;
-		}
-	}
-	//Now that the DHT has pulled the line low,
-	//it will keep the line low for 80 us and then high for 80us
-	//check to see if it keeps low
-	counter = 0;
-	while(gpio_get_level(DHT_PIN)==0)
-	{
-		if(counter > 80)
-		{
-			return DHT_TIMEOUT_ERROR;
-		}
-		counter = counter + 1;
-		ets_delay_us(1);
-	}
-	counter = 0;
-	while(gpio_get_level(DHT_PIN)==1)
-	{
-		if(counter > 80)
-		{
-			return DHT_TIMEOUT_ERROR;
-		}
-		counter = counter + 1;
-		ets_delay_us(1);
-	}
-	// If no errors have occurred, it is time to read data
-	//output data from the DHT11 is 40 bits.
-	//Loop here until 40 bits have been read or a timeout occurs
-
-	for(int i = 0; i < 40; i++)
-	{
-		//int currentBit = 0;
-		//starts new data transmission with 50us low signal
-		counter = 0;
-		while(gpio_get_level(DHT_PIN)==0)
-		{
-			if (counter > 55)
-			{
-				return DHT_TIMEOUT_ERROR;
-			}
-			counter = counter + 1;
-			ets_delay_us(1);
-		}
-
-		//Now check to see if new data is a 0 or a 1
-		counter = 0;
-		while(gpio_get_level(DHT_PIN)==1)
-		{
-			if (counter > 75)
-			{
-				return DHT_TIMEOUT_ERROR;
-			}
-			counter = counter + 1;
-			ets_delay_us(1);
-		}
-		//add the current reading to the output data
-		//since all bits where set to 0 at the start of the loop, only looking for 1s
-		//look for when count is greater than 40 - this allows for some margin of error
-		if (counter > 40)
-		{
-
-			bits[byteCounter] |= (1 << cnt);
-
-		}
-		//here are conditionals that work with the bit counters
-		if (cnt == 0)
-		{
-
-			cnt = 7;
-			byteCounter = byteCounter +1;
-		}else{
-
-			cnt = cnt -1;
-		}
-	}
-	humidity = bits[0];
-	temperature = bits[2];
-	Ftemperature = temperature * 1.8 + 32;
-
-	uint8_t sum = bits[0] + bits[2];
-
-	if (bits[4] != sum)
-	{
-		return DHT_CHECKSUM_ERROR;
-	}
-
-	if(type==0){
-		return humidity;
-	}
-	if(type==1){
-		return temperature;
-	}
-	if(type==2){
-		return Ftemperature;
-	}
-
-	return -1;
+    return 0;
 }
 
-int getFtemp()
+
+/* Wakeup the DHT11
+ * Set pin LOW for at leat 18ms, then HIGH and wait for HIGH for at most 80us
+ * */
+int dht_send_start()
 {
-	int Data  = getData(0);
-	return Data;
-}
-int getTemp()
-{
-	int Data = getData(1);
-	return Data;
-}
-int getHumidity()
-{
-	int Data  = getData(2);
-	return Data;
+    printf("Sending START\n");
+    /* Configure pin for output  */
+	gpio_set_direction(dht_pin, GPIO_MODE_OUTPUT);
+
+    /* Pull LOW for 20ms */
+    gpio_set_level(dht_pin,0);
+	ets_delay_us(20000);
+
+    /* Pull HIGH then reconfigure to input with a pullup */
+	gpio_set_level(dht_pin,1);
+	gpio_set_direction(dht_pin, GPIO_MODE_INPUT);
+	gpio_pullup_en(dht_pin);
+
+    /* Wait for the line to be pulled LOW by the DHT11 (max 40us) */
+    if(!dht_wait_for(0, 40)) {
+        return 0;
+    }
+    /* Wait for the line to be pulled HIGH by the DHT11 (max 80us) */
+    if(!dht_wait_for(1, 80)) {
+        return 0;
+    }
+
+    return 1;
 }
 
+int dht_get_data(void) {
+    int ret = 1;
+    int i;
+    /* Wakeup the device */
+    if(!dht_send_start()) {
+        printf("Device not responding\n");
+        return -1;
+    }
+    /* Read 40 bits of data */
+    uint8_t bits[40] = {0};
+    for(i=0; i<40; i++) {
+        bits[i] = dht_get_bit();
+    }
+
+    for(i=0; i<40; i++) {
+        printf("%d\n", bits[i]);
+    }
+    return ret;
+}
