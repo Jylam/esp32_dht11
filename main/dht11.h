@@ -12,9 +12,6 @@
 void dht_set_pin(int pin);
 int dht_get_data(void);
 
-// Private
-int dht_send_start(void);
-void dht_handle_error(int response);
 
 #endif
 
