@@ -7,9 +7,20 @@
 #include "rom/ets_sys.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
+#include <sys/time.h>
 #include "sdkconfig.h"
 
 #include "dht11.h"
+
+uint64_t get_time_us(void) {
+    struct timeval tv = { .tv_sec = 0, .tv_usec = 0 };
+    uint32_t sec, us;
+    gettimeofday(&tv, NULL);
+    (sec) = tv.tv_sec;
+	(us) = tv.tv_usec;
+	return (sec*1000000)+us;
+}
+
 
 void print_temp_humid(void) {
 	dht_set_pin(GPIO_NUM_27);
