@@ -29,6 +29,16 @@ int message_received = 0;
 int dht_humidity = -1;
 int dht_temp     = -1;
 
+static void dht_setup_pin_output() {
+    /* Configure GPIO as an output */
+    gpio_config_t gpioConfig;
+    gpioConfig.pin_bit_mask = 1<<dht_pin;
+    gpioConfig.mode         = GPIO_MODE_OUTPUT;
+    gpioConfig.pull_up_en   = GPIO_PULLUP_DISABLE;
+    gpioConfig.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    gpioConfig.intr_type    = GPIO_INTR_DISABLE;
+    gpio_config(&gpioConfig);
+}
 
 /* GPIO ISR */
 static void IRAM_ATTR dht_isr_handler(void *args) {
@@ -41,6 +51,7 @@ static void IRAM_ATTR dht_isr_handler(void *args) {
     isr_count++;
     if((isr_count >= DHT_EDGES_PER_READ)) {
             gpio_uninstall_isr_service();
+            dht_setup_pin_output();
             message_received = 1;
     }
 }
@@ -85,15 +96,7 @@ static uint8_t dht_decode_byte(uint8_t *bits)
  * */
 static void dht_send_start()
 {
-    /* Configure GPIO as an output */
-    gpio_config_t gpioConfig;
-    gpioConfig.pin_bit_mask = 1<<dht_pin;
-    gpioConfig.mode         = GPIO_MODE_OUTPUT;
-    gpioConfig.pull_up_en   = GPIO_PULLUP_DISABLE;
-    gpioConfig.pull_down_en = GPIO_PULLDOWN_ENABLE;
-    gpioConfig.intr_type    = GPIO_INTR_DISABLE;
-    gpio_config(&gpioConfig);
-
+    dht_setup_pin_output();
     /* Pull LOW for 20ms */
     gpio_set_level(dht_pin,0);
 	ets_delay_us(20000);  // Should be at least 18
