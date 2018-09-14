@@ -61,7 +61,7 @@ static inline int dht_setup_interrupt(void) {
     gpio_config_t gpioConfig;
     gpioConfig.pin_bit_mask = 1<<dht_pin;
     gpioConfig.mode         = GPIO_MODE_INPUT;
-    gpioConfig.pull_up_en   = GPIO_PULLUP_DISABLE;
+    gpioConfig.pull_up_en   = GPIO_PULLUP_ENABLE;
     gpioConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
     gpioConfig.intr_type    = GPIO_INTR_ANYEDGE;
 
@@ -177,6 +177,7 @@ int dht_get_data(void) {
     }
 end:
     gpio_uninstall_isr_service();
+    vTaskDelay(1000 / portTICK_RATE_MS);
 
     return ret;
 }
