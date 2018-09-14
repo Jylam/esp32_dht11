@@ -15,7 +15,7 @@
 #include "xtensa/core-macros.h"
 
 
-#define DHT_EDGES_PER_READ (80)
+#define DHT_EDGES_PER_READ (82)
 
 struct {uint64_t ts; int value; }    edges[DHT_EDGES_PER_READ];
 
@@ -64,24 +64,23 @@ static inline int dht_setup_interrupt(void) {
     return 0;
 }
 
-
+/* Take 8 bits and put them in a byte */
 static uint8_t dht_decode_byte(uint8_t *bits)
 {
     uint8_t ret = 0;
-    int i;
 
-    for (i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i) {
         ret <<= 1;
-        if (bits[i])
-            ++ret;
+        if (bits[i]) {
+            ret++;
+        }
     }
-
     return ret;
 }
 
 
 /* Wakeup the DHT11
- * Set pin LOW for at leat 18ms, then HIGH and wait for HIGH for at most 80us
+ * Configure the GPIO to output, and set it to LOW for 20ms
  * */
 static void dht_send_start()
 {
@@ -117,8 +116,9 @@ void dht_set_pin(int pin)
 	dht_pin = pin;
 }
 
+/* Send START, wait for completion, and compute the humidy and temperature */
 int dht_get_data(void) {
-
+    int ret;
 
     for(int i = 0; i < DHT_EDGES_PER_READ; i++) {
         edges[i].ts    = 0;
@@ -131,9 +131,10 @@ int dht_get_data(void) {
     dht_setup_interrupt();
 
     while(!message_received) {
-        if((esp_timer_get_time()-intr_start_time)>50000) {
+        if((esp_timer_get_time()-intr_start_time)>10000) {
             gpio_uninstall_isr_service();
-            return DHT_TIMEOUT_ERROR;
+            ret = DHT_TIMEOUT_ERROR;
+            goto end;
         }
 
         ets_delay_us(1000);
@@ -141,18 +142,19 @@ int dht_get_data(void) {
     int i;
     uint8_t bits[40] = {0x00};
     uint8_t  offset = 0;
-    for(i = 1; i < DHT_EDGES_PER_READ; i++) {
+    for(i = 3; i < DHT_EDGES_PER_READ; i++) {
         uint64_t diff = edges[i].ts-edges[i-1].ts;
         if(  (diff>40) && (diff < 60) ) {
         }
-        else if(  (diff>20) && (diff < 30) ) {
+        else if(  (diff>15) && (diff < 35) ) {
             offset++;
         }
-        else if(  (diff>60) && (diff < 80) ) {
+        else if(  (diff>=60) && (diff < 80) ) {
             bits[offset] = 1;
             offset++;
         } else {
-            return DHT_SYNC_ERROR;
+            ret = DHT_SYNC_ERROR;
+            goto end;
         }
     }
 
@@ -163,11 +165,17 @@ int dht_get_data(void) {
     uint8_t checksum = dht_decode_byte(&bits[32]);
 
     if (((hum_int + hum_dec + temp_int + temp_dec) & 0xff) != checksum) {
-        return DHT_CHECKSUM_ERROR;
+        ret = DHT_CHECKSUM_ERROR;
     } else {
         dht_humidity = (hum_int*1000)+hum_dec;
         dht_temp = (temp_int*1000)+temp_dec;
-        return DHT_OK;
+        ret = DHT_OK;
     }
+end:
+    gpio_uninstall_isr_service();
 
+    intr_start_time = 0;
+    isr_count = 0;
+    message_received = 0;
+    return ret;
 }

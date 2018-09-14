@@ -33,18 +33,21 @@ void print_temp_humid(void) {
     }
 }
 
-
+int temp_done = 0;
 void DHT_task(void *pvParameter)
 {
 	printf("Starting DHT measurement!\n");
-	while(1)
-	{
-		print_temp_humid();
-		vTaskDelay(5000 / portTICK_RATE_MS);
-	}
+    for(int i=0; i<10; i++ ) {
+        print_temp_humid();
+        vTaskDelay(5000 / portTICK_RATE_MS);
+    }
+    temp_done = 1;
+    vTaskDelete(NULL);
+
 }
 
-
+#define SLEEP_TIME_S  (120)   // 2mn
+#define SLEEP_TIME_US (SLEEP_TIME_S*1000*1000)
 
 void app_main()
 {
@@ -52,12 +55,13 @@ void app_main()
 
 	nvs_flash_init();
 	vTaskDelay(1000 / portTICK_RATE_MS);
-	//xTaskCreate(&DHT_task, "DHT_task", 2048, NULL, 5, NULL);
-	print_temp_humid();
+	xTaskCreate(&DHT_task, "DHT_task", 20480, NULL, 5, NULL);
 
-
-	//    vTaskDelay(1000 / portTICK_PERIOD_MS);
-	printf("Sleeping for 5s...\n");
-	fflush(stdout);
-	esp_deep_sleep(5000000);
+    printf("Waiting...\n");
+    while(!temp_done) {
+        vTaskDelay(1000 / portTICK_RATE_MS);
+    }
+    printf("Sleeping for %fs...\n", SLEEP_TIME_US/1000000.0);
+    fflush(stdout);
+    esp_deep_sleep(SLEEP_TIME_US);
 }
