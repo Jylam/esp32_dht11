@@ -3,6 +3,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -120,11 +121,11 @@ void dht_set_pin(int pin)
 int dht_get_data(void) {
     int ret;
 
-    for(int i = 0; i < DHT_EDGES_PER_READ; i++) {
-        edges[i].ts    = 0;
-        edges[i].value = 0;
-    }
+    intr_start_time = 0;
+    isr_count = 0;
+    message_received = 0;
 
+    memset(edges, 0, DHT_EDGES_PER_READ*sizeof(struct {uint64_t ts; int value; }));
     /* Wakeup the device */
     dht_send_start();
     /* Setup GPIO interrupt service */
@@ -174,8 +175,5 @@ int dht_get_data(void) {
 end:
     gpio_uninstall_isr_service();
 
-    intr_start_time = 0;
-    isr_count = 0;
-    message_received = 0;
     return ret;
 }
