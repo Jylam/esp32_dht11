@@ -1,4 +1,4 @@
-/*  DHT11 driver
+/*  Interrupt-based DHT11 driver
  *  (c) 2018 Jylam
  */
 
@@ -15,18 +15,20 @@
 #include "xtensa/core-macros.h"
 
 
-#define DHT11_BITS_PER_READ  40
-#define DHT11_EDGES_PREAMBLE 2
-//#define DHT11_EDGES_PER_READ (2 * DHT11_BITS_PER_READ)
-#define DHT11_EDGES_PER_READ (80)
+#define DHT_EDGES_PER_READ (80)
 
-struct {uint64_t ts; int value; }    edges[DHT11_EDGES_PER_READ];
+struct {uint64_t ts; int value; }    edges[DHT_EDGES_PER_READ];
 
 int dht_pin = -1;
 
 uint64_t intr_start_time = 0;
 int isr_count = 0;
 int message_received = 0;
+
+int dht_humidity = -1;
+int dht_temp     = -1;
+
+
 /* GPIO ISR */
 static void IRAM_ATTR dht_isr_handler(void *args) {
     uint64_t t = esp_timer_get_time();
@@ -36,7 +38,7 @@ static void IRAM_ATTR dht_isr_handler(void *args) {
     edges[isr_count].value = v;
 
     isr_count++;
-    if((isr_count >= DHT11_EDGES_PER_READ)) {
+    if((isr_count >= DHT_EDGES_PER_READ)) {
             gpio_uninstall_isr_service();
             message_received = 1;
     }
@@ -54,75 +56,118 @@ static inline int dht_setup_interrupt(void) {
     message_received = 0;
     isr_count        = 0;
     gpio_install_isr_service(0);
-    intr_start_time = xthal_get_ccount();//esp_timer_get_time();
+    intr_start_time = esp_timer_get_time();
     gpio_isr_handler_add(dht_pin, dht_isr_handler, NULL);
 
-    gpio_intr_disable(dht_pin);
     gpio_config(&gpioConfig);
 
     return 0;
 }
 
 
-void dht_set_pin(int pin)
+static uint8_t dht_decode_byte(uint8_t *bits)
 {
-	dht_pin = pin;
-}
+    uint8_t ret = 0;
+    int i;
 
+    for (i = 0; i < 8; ++i) {
+        ret <<= 1;
+        if (bits[i])
+            ++ret;
+    }
+
+    return ret;
+}
 
 
 /* Wakeup the DHT11
  * Set pin LOW for at leat 18ms, then HIGH and wait for HIGH for at most 80us
  * */
-static int dht_send_start()
+static void dht_send_start()
 {
-    printf("Sending START\n");
-    /* Configure pin for output  */
-	gpio_set_direction(dht_pin, GPIO_MODE_OUTPUT);
+    /* Configure GPIO as an output */
+    gpio_config_t gpioConfig;
+    gpioConfig.pin_bit_mask = 1<<dht_pin;
+    gpioConfig.mode         = GPIO_MODE_OUTPUT;
+    gpioConfig.pull_up_en   = GPIO_PULLUP_DISABLE;
+    gpioConfig.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    gpioConfig.intr_type    = GPIO_INTR_DISABLE;
+    gpio_config(&gpioConfig);
 
     /* Pull LOW for 20ms */
     gpio_set_level(dht_pin,0);
 	ets_delay_us(20000);  // Should be at least 18
-    return 1;
+
+    /* The pin will be pulled up when setting the interrupt */
+}
+
+/* Get previously read temperature */
+int dht_get_temperature(void) {
+    return dht_temp;
+}
+
+/* Get previously read humidity */
+int dht_get_humidity(void) {
+    return dht_humidity;
+}
+
+/* Set the GPIO pin the DATA line of the DHT11 is plugged to */
+void dht_set_pin(int pin)
+{
+	dht_pin = pin;
 }
 
 int dht_get_data(void) {
 
-    int ret = 1;
 
-    for(int i = 0; i < DHT11_EDGES_PER_READ; i++) {
+    for(int i = 0; i < DHT_EDGES_PER_READ; i++) {
         edges[i].ts    = 0;
         edges[i].value = 0;
     }
 
     /* Wakeup the device */
-    if(!dht_send_start()) {
-        printf("Device not responding\n");
-        return -1;
-    }
+    dht_send_start();
     /* Setup GPIO interrupt service */
     dht_setup_interrupt();
 
     while(!message_received) {
-        printf("%d itr\n", isr_count);
+        if((esp_timer_get_time()-intr_start_time)>50000) {
+            gpio_uninstall_isr_service();
+            return DHT_TIMEOUT_ERROR;
+        }
+
         ets_delay_us(1000);
     }
-    printf("Message received, %d interruptions\n", isr_count);
     int i;
-    for(i = 1; i < DHT11_EDGES_PER_READ; i++) {
+    uint8_t bits[40] = {0x00};
+    uint8_t  offset = 0;
+    for(i = 1; i < DHT_EDGES_PER_READ; i++) {
         uint64_t diff = edges[i].ts-edges[i-1].ts;
-        printf("%llu: %d  (diff %llu)\t", edges[i].ts, edges[i].value, diff);
         if(  (diff>40) && (diff < 60) ) {
-            printf("\n");
         }
         else if(  (diff>20) && (diff < 30) ) {
-            printf("0\n");
+            offset++;
         }
         else if(  (diff>60) && (diff < 80) ) {
-            printf("1\n");
+            bits[offset] = 1;
+            offset++;
         } else {
-            printf("?????\n");
+            return DHT_SYNC_ERROR;
         }
     }
-    return ret;
+
+    uint8_t hum_int = dht_decode_byte(bits);
+    uint8_t hum_dec = dht_decode_byte(&bits[8]);
+    uint8_t temp_int = dht_decode_byte(&bits[16]);
+    uint8_t temp_dec = dht_decode_byte(&bits[24]);
+    uint8_t checksum = dht_decode_byte(&bits[32]);
+
+    if (((hum_int + hum_dec + temp_int + temp_dec) & 0xff) != checksum) {
+        return DHT_CHECKSUM_ERROR;
+    } else {
+        dht_humidity = (hum_int*1000)+hum_dec;
+        dht_temp = (temp_int*1000)+temp_dec;
+        return DHT_OK;
+    }
+
 }

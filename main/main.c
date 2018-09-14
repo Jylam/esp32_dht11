@@ -24,7 +24,13 @@ uint64_t get_time_us(void) {
 
 void print_temp_humid(void) {
 	dht_set_pin(GPIO_NUM_27);
-    printf("Read: %d\n", dht_get_data());
+    int ret = dht_get_data();
+    if(ret == DHT_OK ) {
+        printf("Temp: %d\n", dht_get_temperature());
+        printf("Humi: %d\n", dht_get_humidity());
+    } else {
+        printf("Failed to get data (error %d)\n", ret);
+    }
 }
 
 
