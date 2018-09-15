@@ -25,6 +25,7 @@ static void dht_isr_handler(void *args);
 struct {uint64_t ts; int value; }    edges[DHT_EDGES_PER_READ];
 SemaphoreHandle_t message_semaphore = NULL;
 StaticSemaphore_t message_semaphore_buffer;
+
 int      dht_pin          = -1;
 uint64_t intr_start_time  = 0;
 int      isr_count        = 0;
@@ -136,13 +137,14 @@ void dht_set_pin(int pin)
 }
 
 /* Send START, wait for completion, and compute the humidy and temperature */
+/* FIXME Doesn't work the first time, for some reason */
 int dht_get_data(void) {
     int ret;
-    message_semaphore = xSemaphoreCreateBinaryStatic(&message_semaphore_buffer);
 
     intr_start_time = 0;
     isr_count = 0;
 
+    message_semaphore = xSemaphoreCreateBinaryStatic(&message_semaphore_buffer);
     memset(edges, 0, DHT_EDGES_PER_READ*sizeof(struct {uint64_t ts; int value;}));
 
     /* Wakeup the device */
@@ -157,25 +159,37 @@ int dht_get_data(void) {
             printf("Error Poll took %lldus\n", poll_end-poll_start);
             goto end;
     }
-    printf("Poll took %lldus\n", poll_end-poll_start);
 
     int i;
     uint8_t bits[40] = {0x00};
     uint8_t  offset = 0;
+    int sync = 1;
     for(i = 3; i < DHT_EDGES_PER_READ; i++) {
         uint64_t diff = edges[i].ts-edges[i-1].ts;
-        if(  (diff>40) && (diff < 60) ) {
+
+        if((diff>40) && (diff<60)) {
+            // SYNC
+            sync = 2;
         }
-        else if(  (diff>15) && (diff < 35) ) {
+        else if((diff>15) && (diff<35)) {
+            // FALSE
+            if(sync!=1) {
+                printf("LOST SYNC at %d\n", i);
+                ret = DHT_SYNC_ERROR;
+                goto end;
+            }
+
             offset++;
         }
-        else if(  (diff>=60) && (diff < 80) ) {
+        else if((diff>=60) && (diff < 80)) {
+            // TRUE
             bits[offset] = 1;
             offset++;
         } else {
-            ret = DHT_SYNC_ERROR;
+            ret = DHT_TIMING_ERROR;
             goto end;
         }
+        sync--;
     }
 
     uint8_t hum_int = dht_decode_byte(bits);

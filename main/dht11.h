@@ -5,9 +5,10 @@
 #define DHT11_H_
 
 #define DHT_TIMEOUT_ERROR  -1
-#define DHT_SYNC_ERROR     -2
-#define DHT_CHECKSUM_ERROR -3
-#define DHT_OK  1
+#define DHT_TIMING_ERROR   -2
+#define DHT_SYNC_ERROR     -3
+#define DHT_CHECKSUM_ERROR -4
+#define DHT_OK              1
 
 void dht_set_pin(int pin);
 int  dht_get_data(void);
