@@ -12,6 +12,9 @@
 
 #include "dht11.h"
 
+#define SLEEP_TIME_S  1//(10*60)
+#define SLEEP_TIME_US (SLEEP_TIME_S*1000*1000)
+
 uint64_t get_time_us(void) {
     struct timeval tv = { .tv_sec = 0, .tv_usec = 0 };
     uint32_t sec, us;
@@ -39,15 +42,13 @@ void DHT_task(void *pvParameter)
 	printf("Starting DHT measurement!\n");
     for(int i=0; i<10; i++ ) {
         print_temp_humid();
-        vTaskDelay(5000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_RATE_MS);
     }
     temp_done = 1;
     vTaskDelete(NULL);
 
 }
 
-#define SLEEP_TIME_S  (120)   // 2mn
-#define SLEEP_TIME_US (SLEEP_TIME_S*1000*1000)
 
 void app_main()
 {

@@ -101,7 +101,8 @@ static void dht_send_start()
     gpio_set_level(dht_pin,0);
 	ets_delay_us(20000);  // Should be at least 18
 
-    /* The pin will be pulled up when setting the interrupt */
+    /* The pin will also be pulled up when setting the interrupt */
+    gpio_set_level(dht_pin,1);
 }
 
 /* Get previously read temperature */
