@@ -26,7 +26,6 @@ uint64_t get_time_us(void) {
 
 
 void print_temp_humid(void) {
-	dht_set_pin(GPIO_NUM_27);
     int ret = dht_get_data();
     if(ret == DHT_OK ) {
         printf("Temp: %d\n", dht_get_temperature());
@@ -37,30 +36,31 @@ void print_temp_humid(void) {
 }
 
 int temp_done = 0;
-void DHT_task(void *pvParameter)
-{
+void DHT_task(void *pvParameter) {
 	printf("Starting DHT measurement!\n");
     for(int i=0; i<10; i++ ) {
         print_temp_humid();
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1500 / portTICK_RATE_MS);
     }
     temp_done = 1;
+    printf("DHT measurement done, deleting task\n");
     vTaskDelete(NULL);
-
 }
-
 
 void app_main()
 {
-	printf("Swarm32 (c) Jylam 2018\n");
-
 	nvs_flash_init();
-	vTaskDelay(1000 / portTICK_RATE_MS);
-	xTaskCreate(&DHT_task, "DHT_task", 20480, NULL, 5, NULL);
 
-    printf("Waiting...\n");
-    while(!temp_done) {
-        vTaskDelay(1000 / portTICK_RATE_MS);
+    printf("Swarm32 (c) Jylam 2018\n");
+	dht_set_pin(GPIO_NUM_27);
+	vTaskDelay(2000 / portTICK_RATE_MS);
+
+    TaskHandle_t dht_handle;
+    size_t dht_task = xTaskCreate(&DHT_task, "DHT_task", 20480, NULL, configMAX_PRIORITIES, &dht_handle);
+    printf("Created DHT task %d\n", dht_task);
+    // Wait for task completion
+    while(eTaskGetState(dht_handle) != eReady) { // ??? should be eDelete
+        vTaskDelay(10 / portTICK_RATE_MS);
     }
     printf("Sleeping for %fs...\n", SLEEP_TIME_US/1000000.0);
     fflush(stdout);

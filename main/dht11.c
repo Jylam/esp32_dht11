@@ -17,28 +17,52 @@
 
 
 #define DHT_EDGES_PER_READ (82)
+#define DHT_RESPONSE_TIMEOUT_US 20000
+
+static void IRAM_ATTR dht_isr_handler(void *args);
 
 struct {uint64_t ts; int value; }    edges[DHT_EDGES_PER_READ];
+int      dht_pin          = -1;
+uint64_t intr_start_time  = 0;
+int      isr_count        = 0;
+int      message_received = 0;
+int      dht_humidity     = -1;
+int      dht_temp         = -1;
 
-int dht_pin = -1;
-
-uint64_t intr_start_time = 0;
-int isr_count = 0;
-int message_received = 0;
-
-int dht_humidity = -1;
-int dht_temp     = -1;
-
+/* Configure GPIO as an output, no interruption */
 static void dht_setup_pin_output() {
-    /* Configure GPIO as an output */
     gpio_config_t gpioConfig;
     gpioConfig.pin_bit_mask = 1<<dht_pin;
     gpioConfig.mode         = GPIO_MODE_OUTPUT;
     gpioConfig.pull_up_en   = GPIO_PULLUP_DISABLE;
-    gpioConfig.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    gpioConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
     gpioConfig.intr_type    = GPIO_INTR_DISABLE;
     gpio_config(&gpioConfig);
 }
+
+/* Configure GPIO for interruptions on both edges */
+static inline int dht_setup_interrupt(void) {
+    gpio_config_t gpioConfig;
+    gpioConfig.pin_bit_mask = 1<<dht_pin;
+    gpioConfig.mode         = GPIO_MODE_INPUT;
+    /* Pull-up is not necessary, and will cause a short circuit,
+     * as the DHT11 is pulling down at the same time */
+    gpioConfig.pull_up_en   = GPIO_PULLUP_DISABLE;
+    gpioConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpioConfig.intr_type    = GPIO_INTR_ANYEDGE;
+
+    message_received = 0;
+    isr_count        = 0;
+
+    intr_start_time = esp_timer_get_time();
+    gpio_install_isr_service(ESP_INTR_FLAG_EDGE);
+    gpio_isr_handler_add(dht_pin, dht_isr_handler, NULL);
+
+    gpio_config(&gpioConfig);
+
+    return 0;
+}
+
 
 /* GPIO ISR */
 static void IRAM_ATTR dht_isr_handler(void *args) {
@@ -54,26 +78,6 @@ static void IRAM_ATTR dht_isr_handler(void *args) {
             dht_setup_pin_output();
             message_received = 1;
     }
-}
-
-/* Configure GPIO for interruptions on both edges */
-static inline int dht_setup_interrupt(void) {
-    gpio_config_t gpioConfig;
-    gpioConfig.pin_bit_mask = 1<<dht_pin;
-    gpioConfig.mode         = GPIO_MODE_INPUT;
-    gpioConfig.pull_up_en   = GPIO_PULLUP_ENABLE;
-    gpioConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    gpioConfig.intr_type    = GPIO_INTR_ANYEDGE;
-
-    message_received = 0;
-    isr_count        = 0;
-    gpio_install_isr_service(0);
-    intr_start_time = esp_timer_get_time();
-    gpio_isr_handler_add(dht_pin, dht_isr_handler, NULL);
-
-    gpio_config(&gpioConfig);
-
-    return 0;
 }
 
 /* Take 8 bits and put them in a byte */
@@ -97,11 +101,13 @@ static uint8_t dht_decode_byte(uint8_t *bits)
 static void dht_send_start()
 {
     dht_setup_pin_output();
+
     /* Pull LOW for 20ms */
     gpio_set_level(dht_pin,0);
-	ets_delay_us(20000);  // Should be at least 18
+	// Should be at least 18
+	vTaskDelay(20 / portTICK_RATE_MS);
 
-    /* The pin will also be pulled up when setting the interrupt */
+    /* Set pin to HIGH, the DHT11 wakes up here (or ~12us later)*/
     gpio_set_level(dht_pin,1);
 }
 
@@ -136,18 +142,20 @@ int dht_get_data(void) {
     dht_setup_interrupt();
 
     while(!message_received) {
-        if((esp_timer_get_time()-intr_start_time)>10000) {
+
+        if((esp_timer_get_time()-intr_start_time)>DHT_RESPONSE_TIMEOUT_US) {
             gpio_uninstall_isr_service();
             ret = DHT_TIMEOUT_ERROR;
+            printf("Timeout, %d edges\n", isr_count);
             goto end;
         }
 
         ets_delay_us(1000);
     }
-    int i;
+
     uint8_t bits[40] = {0x00};
     uint8_t  offset = 0;
-    for(i = 3; i < DHT_EDGES_PER_READ; i++) {
+    for(int i = 3; i < DHT_EDGES_PER_READ; i++) {
         uint64_t diff = edges[i].ts-edges[i-1].ts;
         if(  (diff>40) && (diff < 60) ) {
         }
@@ -178,7 +186,6 @@ int dht_get_data(void) {
     }
 end:
     gpio_uninstall_isr_service();
-    vTaskDelay(1000 / portTICK_RATE_MS);
 
     return ret;
 }
