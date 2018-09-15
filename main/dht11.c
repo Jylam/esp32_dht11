@@ -120,6 +120,47 @@ static void IRAM_ATTR dht_send_start()
     gpio_set_level(dht_pin,1);
 }
 
+/* Check the timings of the received signal edges and convert that to bits
+ * 26-28us means FALSE
+ * 70us means TRUE
+ * Each bit follows a 50us LOW signal
+ * */
+static int dht_parse_bits_from_edges(uint8_t *bits) {
+    int ret = DHT_OK;
+    int i;
+    uint8_t  offset = 0;
+    int sync = 1;
+    for(i = 3; i < DHT_EDGES_PER_READ; i++) {
+        /* Compute the length of the pulse in µs */
+        uint64_t diff = edges[i].ts-edges[i-1].ts;
+
+        if((diff>40) && (diff<60)) {
+            // SYNC
+            sync = 2;
+        }
+        else if((diff>15) && (diff<35)) {
+            // FALSE
+            if(sync!=1) {
+                ret = DHT_SYNC_ERROR;
+                goto end;
+            }
+            offset++;
+        }
+        else if((diff>=60) && (diff < 80)) {
+            // TRUE
+            bits[offset] = 1;
+            offset++;
+        } else {
+            ret = DHT_TIMING_ERROR;
+            goto end;
+        }
+        sync--;
+    }
+    end:
+    return ret;
+}
+
+
 /* Get previously read temperature */
 int dht_get_temperature(void) {
     return dht_temp;
@@ -140,73 +181,52 @@ void dht_set_pin(int pin)
 /* FIXME Doesn't work the first time, for some reason */
 int dht_get_data(void) {
     int ret;
+    uint8_t bits[40] = {0x00};
 
     intr_start_time = 0;
     isr_count = 0;
-
-    message_semaphore = xSemaphoreCreateBinaryStatic(&message_semaphore_buffer);
     memset(edges, 0, DHT_EDGES_PER_READ*sizeof(struct {uint64_t ts; int value;}));
 
+    /* Create semaphore released by the ISR on full message reception */
+    message_semaphore = xSemaphoreCreateBinaryStatic(&message_semaphore_buffer);
     /* Wakeup the device */
     dht_send_start();
     /* Setup GPIO interrupt service */
     dht_setup_interrupt();
 
+    /* Wait for the semaphore to be released */
     if( xSemaphoreTake(message_semaphore, (DHT_RESPONSE_TIMEOUT_US/1000) / portTICK_PERIOD_MS) != pdTRUE) {
             gpio_uninstall_isr_service();
             ret = DHT_TIMEOUT_ERROR;
             printf("Timeout, %d edges\n", isr_count);
-            printf("Error Poll took %lldus\n", poll_end-poll_start);
+            //printf("Error Poll took %lldus\n", poll_end-poll_start);
             goto end;
     }
 
-    int i;
-    uint8_t bits[40] = {0x00};
-    uint8_t  offset = 0;
-    int sync = 1;
-    for(i = 3; i < DHT_EDGES_PER_READ; i++) {
-        uint64_t diff = edges[i].ts-edges[i-1].ts;
+    /* Get a bitfield from the edges */
+    ret = dht_parse_bits_from_edges(bits);
 
-        if((diff>40) && (diff<60)) {
-            // SYNC
-            sync = 2;
-        }
-        else if((diff>15) && (diff<35)) {
-            // FALSE
-            if(sync!=1) {
-                printf("LOST SYNC at %d\n", i);
-                ret = DHT_SYNC_ERROR;
-                goto end;
-            }
+    /* Parse the bitfield into usable bytes */
+    if(ret == DHT_OK) {
+        uint8_t hum_int = dht_decode_byte(bits);
+        uint8_t hum_dec = dht_decode_byte(&bits[8]);
+        uint8_t temp_int = dht_decode_byte(&bits[16]);
+        uint8_t temp_dec = dht_decode_byte(&bits[24]);
+        uint8_t checksum = dht_decode_byte(&bits[32]);
 
-            offset++;
-        }
-        else if((diff>=60) && (diff < 80)) {
-            // TRUE
-            bits[offset] = 1;
-            offset++;
+        /* Verify checksum */
+        if (((hum_int + hum_dec + temp_int + temp_dec) & 0xff) != checksum) {
+            ret = DHT_CHECKSUM_ERROR;
         } else {
-            ret = DHT_TIMING_ERROR;
-            goto end;
+            /* We're good */
+            dht_humidity = (hum_int*1000)+hum_dec;
+            dht_temp = (temp_int*1000)+temp_dec;
+            ret = DHT_OK;
         }
-        sync--;
-    }
-
-    uint8_t hum_int = dht_decode_byte(bits);
-    uint8_t hum_dec = dht_decode_byte(&bits[8]);
-    uint8_t temp_int = dht_decode_byte(&bits[16]);
-    uint8_t temp_dec = dht_decode_byte(&bits[24]);
-    uint8_t checksum = dht_decode_byte(&bits[32]);
-
-    if (((hum_int + hum_dec + temp_int + temp_dec) & 0xff) != checksum) {
-        ret = DHT_CHECKSUM_ERROR;
-    } else {
-        dht_humidity = (hum_int*1000)+hum_dec;
-        dht_temp = (temp_int*1000)+temp_dec;
-        ret = DHT_OK;
     }
 end:
     gpio_uninstall_isr_service();
 
     return ret;
 }
+

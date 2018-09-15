@@ -53,12 +53,13 @@ void app_main()
 
     printf("Swarm32 (c) Jylam 2018\n");
 	dht_set_pin(GPIO_NUM_27);
-	vTaskDelay(5000 / portTICK_RATE_MS);
+	vTaskDelay(1000 / portTICK_RATE_MS);
     TaskHandle_t dht_handle;
-    size_t dht_task = xTaskCreate(&DHT_task, "DHT_task", 20480, NULL, configMAX_PRIORITIES, &dht_handle);
-    printf("Created DHT task %d\n", dht_task);
+    xTaskCreate(&DHT_task, "DHT_task", 20480, NULL, configMAX_PRIORITIES, &dht_handle);
+	vTaskDelay(100 / portTICK_RATE_MS);
+
     // Wait for task completion
-    while(eTaskGetState(dht_handle) != eReady) { // ??? should be eDelete
+    while(eTaskGetState(dht_handle) != eReady) { // ??? should be eDelete ?
         vTaskDelay(500 / portTICK_RATE_MS);
     }
     printf("Sleeping for %fs...\n", SLEEP_TIME_US/1000000.0);
