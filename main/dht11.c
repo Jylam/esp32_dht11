@@ -146,12 +146,12 @@ static int dht_parse_bits_from_edges(uint8_t *bits) {
     for(i = start; i < DHT_EDGES_PER_READ; i++) {
         /* Compute the length of the pulse in µs */
         uint64_t diff = edges[i].ts-edges[i-1].ts;
-
-        if((diff>40) && (diff<60)) {
+        //printf("%d: %lld\n", i, diff);
+        if((diff>40) && (diff<69)) {         // Per doc, 50µs
             // SYNC
             sync = 2;
         }
-        else if((diff>15) && (diff<35)) {
+        else if((diff>15) && (diff<35)) {    // Per doc, 26-28µs
             // FALSE
             if(sync!=1) {
                 ret = DHT_SYNC_ERROR;
@@ -159,7 +159,7 @@ static int dht_parse_bits_from_edges(uint8_t *bits) {
             }
             offset++;
         }
-        else if((diff>=60) && (diff < 80)) {
+        else if((diff>=69) && (diff < 80)) {  // Per doc, 70µs
             // TRUE
             bits[offset] = 1;
             offset++;
@@ -231,8 +231,13 @@ int dht_get_data(void) {
             ret = DHT_CHECKSUM_ERROR;
         } else {
             /* We're good */
+#if 1 // DHT22
+            dht_humidity = ((hum_int<<8) | hum_dec)*100;
+            dht_temp =     ((temp_int<<8)+temp_dec)*100;
+#else // DHT11
             dht_humidity = (hum_int*1000)+hum_dec;
             dht_temp = (temp_int*1000)+temp_dec;
+#endif
             ret = DHT_OK;
         }
     }

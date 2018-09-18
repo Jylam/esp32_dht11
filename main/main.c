@@ -28,8 +28,8 @@ uint64_t get_time_us(void) {
 void print_temp_humid(void) {
     int ret = dht_get_data();
     if(ret == DHT_OK ) {
-        printf("Temp: %d\n", dht_get_temperature());
-        printf("Humi: %d\n", dht_get_humidity());
+        printf("Temp: %f\n", (double)dht_get_temperature()/1000.0);
+        printf("Humi: %f\n", (double)dht_get_humidity()/1000.0);
     } else {
         printf("Failed to get data (error %d)\n", ret);
     }
