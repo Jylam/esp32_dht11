@@ -17,8 +17,8 @@
 #include "xtensa/core-macros.h"
 
 
-#define DHT_EDGES_PER_READ (82)
-#define DHT_RESPONSE_TIMEOUT_US 20000
+#define DHT_EDGES_PER_READ (83)
+#define DHT_RESPONSE_TIMEOUT_US 10000
 
 static void dht_isr_handler(void *args);
 
@@ -47,25 +47,27 @@ static void IRAM_ATTR dht_setup_pin_output() {
     gpio_config(&gpioConfig);
 }
 
-/* Configure GPIO for interruptions on both edges */
+/* Configure GPIO as an input for interruptions on both edges */
 static inline int IRAM_ATTR dht_setup_interrupt(void) {
     gpio_config_t gpioConfig;
 
     /* Reset */
     isr_count        = 0;
-
     intr_start_time = esp_timer_get_time();
-    gpio_install_isr_service(ESP_INTR_FLAG_EDGE);
-    gpio_isr_handler_add(dht_pin, dht_isr_handler, NULL);
 
-
+    /* configure GPIO as an input, interrupted on both raising and falling edges */
     gpioConfig.pin_bit_mask = 1<<dht_pin;
     gpioConfig.mode         = GPIO_MODE_INPUT;
     /* Pull-up is not necessary, and will cause a short circuit,
      * as the DHT11 is pulling down at the same time */
-    gpioConfig.pull_up_en   = GPIO_PULLUP_DISABLE;
+    gpioConfig.pull_up_en   = GPIO_PULLUP_ENABLE;
     gpioConfig.pull_down_en = GPIO_PULLDOWN_DISABLE;
     gpioConfig.intr_type    = GPIO_INTR_ANYEDGE;
+
+
+    /* Setup ISR service and install the ISR itself */
+    gpio_install_isr_service(ESP_INTR_FLAG_EDGE);
+    gpio_isr_handler_add(dht_pin, dht_isr_handler, NULL);
 
     gpio_config(&gpioConfig);
 
@@ -110,14 +112,13 @@ static uint8_t dht_decode_byte(uint8_t *bits)
 static void IRAM_ATTR dht_send_start()
 {
     dht_setup_pin_output();
+    gpio_set_level(dht_pin,1);
 
     /* Pull LOW for 20ms */
     gpio_set_level(dht_pin,0);
 	// Should be at least 18
     ets_delay_us(20000);
-
-    /* Set pin to HIGH, the DHT11 wakes up here (or ~12us later)*/
-    gpio_set_level(dht_pin,1);
+    /* The pin will be set to PULLUP during the interruption setup */
 }
 
 /* Check the timings of the received signal edges and convert that to bits
@@ -130,7 +131,19 @@ static int dht_parse_bits_from_edges(uint8_t *bits) {
     int i;
     uint8_t  offset = 0;
     int sync = 1;
-    for(i = 3; i < DHT_EDGES_PER_READ; i++) {
+    int start = 0;
+
+    /* FIXME shitty hack to find the first relevant edge (~54µs) */
+    for(i = 1; i < DHT_EDGES_PER_READ; i++) {
+        uint64_t diff = edges[i].ts-edges[i-1].ts;
+        if((diff>50) && (diff<60)) {
+            start = i;
+            break;
+        }
+    }
+
+
+    for(i = start; i < DHT_EDGES_PER_READ; i++) {
         /* Compute the length of the pulse in µs */
         uint64_t diff = edges[i].ts-edges[i-1].ts;
 
@@ -156,7 +169,7 @@ static int dht_parse_bits_from_edges(uint8_t *bits) {
         }
         sync--;
     }
-    end:
+end:
     return ret;
 }
 
@@ -178,7 +191,7 @@ void dht_set_pin(int pin)
 }
 
 /* Send START, wait for completion, and compute the humidy and temperature */
-/* FIXME Doesn't work the first time, for some reason */
+/* FIXME Doesn't work the first time(s), for some reason */
 int dht_get_data(void) {
     int ret;
     uint8_t bits[40] = {0x00};
@@ -199,7 +212,6 @@ int dht_get_data(void) {
             gpio_uninstall_isr_service();
             ret = DHT_TIMEOUT_ERROR;
             printf("Timeout, %d edges\n", isr_count);
-            //printf("Error Poll took %lldus\n", poll_end-poll_start);
             goto end;
     }
 
@@ -226,7 +238,6 @@ int dht_get_data(void) {
     }
 end:
     gpio_uninstall_isr_service();
-
     return ret;
 }
 
