@@ -32,7 +32,6 @@ int      isr_count        = 0;
 int      dht_humidity     = -1;
 int      dht_temp         = -1;
 
-uint64_t poll_start, poll_end;
 
 /* Configure GPIO as an output, no interruption */
 static void IRAM_ATTR dht_setup_pin_output() {
@@ -109,11 +108,11 @@ static uint8_t dht_decode_byte(uint8_t *bits)
 /* Wakeup the DHT11
  * Configure the GPIO to output, and set it to LOW for 20ms
  * */
-static void IRAM_ATTR dht_send_start()
+static void dht_send_start()
 {
     dht_setup_pin_output();
     gpio_set_level(dht_pin,1);
-
+    ets_delay_us(1000);
     /* Pull LOW for 20ms */
     gpio_set_level(dht_pin,0);
 	// Should be at least 18
@@ -133,7 +132,8 @@ static int dht_parse_bits_from_edges(uint8_t *bits) {
     int sync = 1;
     int start = 0;
 
-    /* FIXME shitty hack to find the first relevant edge (~54µs) */
+    /* FIXME shitty hack to find the first relevant edge (~54µs)
+     * Sometimes 2, sometimes 3 */
     for(i = 1; i < DHT_EDGES_PER_READ; i++) {
         uint64_t diff = edges[i].ts-edges[i-1].ts;
         if((diff>50) && (diff<60)) {
@@ -141,7 +141,6 @@ static int dht_parse_bits_from_edges(uint8_t *bits) {
             break;
         }
     }
-
 
     for(i = start; i < DHT_EDGES_PER_READ; i++) {
         /* Compute the length of the pulse in µs */
