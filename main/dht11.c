@@ -27,11 +27,11 @@ SemaphoreHandle_t message_semaphore = NULL;
 StaticSemaphore_t message_semaphore_buffer;
 
 int      dht_pin          = -1;
+int      dht_type         = DHT_TYPE11;
 uint64_t intr_start_time  = 0;
 int      isr_count        = 0;
 int      dht_humidity     = -1;
 int      dht_temp         = -1;
-
 
 /* Configure GPIO as an output, no interruption */
 static void IRAM_ATTR dht_setup_pin_output() {
@@ -188,6 +188,11 @@ void dht_set_pin(int pin)
 {
 	dht_pin = pin;
 }
+void dht_set_type(int type)
+{
+	dht_type = type;
+}
+
 
 /* Send START, wait for completion, and compute the humidy and temperature */
 /* FIXME Doesn't work the first time(s), for some reason */
@@ -230,13 +235,13 @@ int dht_get_data(void) {
             ret = DHT_CHECKSUM_ERROR;
         } else {
             /* We're good */
-#if 1 // DHT22
-            dht_humidity = ((hum_int<<8) | hum_dec)*100;
-            dht_temp =     ((temp_int<<8)+temp_dec)*100;
-#else // DHT11
-            dht_humidity = (hum_int*1000)+hum_dec;
-            dht_temp = (temp_int*1000)+temp_dec;
-#endif
+            if(dht_type == DHT_TYPE22) {
+                dht_humidity = ((hum_int<<8) | hum_dec)*100;
+                dht_temp =     ((temp_int<<8)+temp_dec)*100;
+            } else {
+                dht_humidity = (hum_int*1000)+hum_dec;
+                dht_temp = (temp_int*1000)+(temp_dec*100);
+            }
             ret = DHT_OK;
         }
     }

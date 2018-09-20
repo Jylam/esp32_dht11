@@ -53,7 +53,9 @@ void app_main()
 
     printf("Swarm32 (c) Jylam 2018\n");
 	dht_set_pin(GPIO_NUM_27);
-	vTaskDelay(1000 / portTICK_RATE_MS);
+	dht_set_type(DHT_TYPE11);
+
+    vTaskDelay(1000 / portTICK_RATE_MS);
     TaskHandle_t dht_handle;
     xTaskCreate(&DHT_task, "DHT_task", 20480, NULL, configMAX_PRIORITIES, &dht_handle);
 	vTaskDelay(100 / portTICK_RATE_MS);
