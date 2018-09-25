@@ -11,6 +11,8 @@
 #include "sdkconfig.h"
 
 #include "dht11.h"
+#include "wifi.h"
+
 
 #define SLEEP_TIME_S  1//(10*60)
 #define SLEEP_TIME_US (SLEEP_TIME_S*1000*1000)
@@ -50,6 +52,8 @@ void DHT_task(void *pvParameter) {
 void app_main()
 {
 	nvs_flash_init();
+    wifi_init();
+
 
     printf("Swarm32 (c) Jylam 2018\n");
 	dht_set_pin(GPIO_NUM_27);
