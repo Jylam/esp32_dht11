@@ -19,14 +19,14 @@ void initialize_sntp(void)
     struct tm timeinfo = { 0 };
     int retry = 0;
 
-    int uxBits = xEventGroupWaitBits(
+    int got_network = xEventGroupWaitBits(
             wifi_event_group ,
             CONNECTED_BIT,
             pdFALSE,        // Don't clear bit after waiting
             pdFALSE,
             100000 / portTICK_PERIOD_MS);
 
-    if(uxBits) {
+    if(got_network) {
         int retry_count = 10;
         while(timeinfo.tm_year < (2016 - 1900) && ++retry < retry_count) {
             printf("Waiting for system time to be set... (%d/%d)\n", retry, retry_count);
@@ -38,8 +38,8 @@ void initialize_sntp(void)
         setenv("TZ", "GMT+2/-2,M10.5.0/-1", 1);
         tzset();
         localtime_r(&now, &timeinfo);
-    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-    printf("The current date/time in France is: %s\n", strftime_buf);
+        strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+        printf("The current date/time is: %s\n", strftime_buf);
     }
 
     sntp_stop();
