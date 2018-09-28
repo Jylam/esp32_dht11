@@ -14,7 +14,7 @@ EventGroupHandle_t wifi_event_group;
 
 esp_err_t event_handler(void *ctx, system_event_t *event)
 {
-    printf("Wifi Event ID : %08X\n", event->event_id);
+    //printf("Wifi Event ID : %08X\n", event->event_id);
     switch(event->event_id) {
         case SYSTEM_EVENT_STA_CONNECTED:
             printf("Connected !\n");

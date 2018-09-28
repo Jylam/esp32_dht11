@@ -24,7 +24,7 @@ void initialize_sntp(void)
             CONNECTED_BIT,
             pdFALSE,        // Don't clear bit after waiting
             pdFALSE,
-            100000 / portTICK_PERIOD_MS);
+            20000 / portTICK_PERIOD_MS);
 
     if(got_network) {
         int retry_count = 10;
