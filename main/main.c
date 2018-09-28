@@ -13,6 +13,7 @@
 #include <sys/time.h>
 #include "sdkconfig.h"
 #include "esp_http_client.h"
+#include "rom/rtc.h"
 
 #include "dht11.h"
 #include "wifi.h"
@@ -71,10 +72,7 @@ void DHT_task(void *pvParameter) {
 }
 
 void SNTP_task(void *ptr) {
-    bool res = initialize_sntp();
-    if(res) {
-
-    }
+    initialize_sntp();
     vTaskDelete(NULL);
 }
 
@@ -83,9 +81,10 @@ void app_main() {
     TaskHandle_t sntp_handle;
     struct dht_result dht_result;
 
+    esp_reset_reason_t reset_reason = rtc_get_reset_reason(0); // 1: power-on    5: deep-sleep
+
 
     printf("Swarm32 (c) Jylam 2018\n");
-
     nvs_flash_init();
 
     // Init wifi (returns almost immediately)
