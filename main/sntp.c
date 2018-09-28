@@ -8,6 +8,7 @@
 
 
 EventGroupHandle_t sntp_event_group;
+time_t now = 0;
 
 bool initialize_sntp(void)
 {
@@ -21,7 +22,6 @@ bool initialize_sntp(void)
     sntp_init();
 
 
-    time_t now = 0;
     struct tm timeinfo = { 0 };
     int retry = 0;
 
@@ -36,13 +36,13 @@ bool initialize_sntp(void)
         printf("Got network !\n");
         int retry_count = 20;
         while(timeinfo.tm_year < (2016 - 1900) && ++retry < retry_count) {
-            printf("Waiting for system time to be set... (%d/%d)\n", retry, retry_count);
             vTaskDelay(500 / portTICK_PERIOD_MS);
             time(&now);
             localtime_r(&now, &timeinfo);
         }
         if(retry< retry_count) {
             printf("Got NTP\n");
+
             xEventGroupSetBits(sntp_event_group, SNTP_SUCCESS_BIT);
             ret = true;
         } else {
@@ -55,7 +55,5 @@ bool initialize_sntp(void)
         xEventGroupSetBits(sntp_event_group, SNTP_FAILURE_BIT);
         ret = false;
     }
-
-    sntp_stop();
     return ret;
 }

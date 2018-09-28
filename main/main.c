@@ -120,13 +120,12 @@ void app_main() {
     // Got NTP date, which also means we have a wifi connection and some sort of internet access
     if(got_sntp & SNTP_SUCCESS_BIT) {
         char strftime_buf[64];
-        time_t now = 0;
         struct tm timeinfo = { 0 };
         setenv("TZ", "GMT+2/-2,M10.5.0/-1", 1);
         tzset();
         localtime_r(&now, &timeinfo);
         strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-        printf("The current date/time is: %s\n", strftime_buf);
+        printf("The current date/time is: %s (%d)\n", strftime_buf, (unsigned int)now);
     } else if(got_sntp & SNTP_FAILURE_BIT) {
         printf("Can't get NTP date\n");
     } else {
