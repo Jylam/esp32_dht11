@@ -1,14 +1,20 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
-#include "esp_http_client.h"
 #include "lwip/apps/sntp.h"
 
+#include "sntp.h"
 #include "wifi.h"
 
-void initialize_sntp(void)
+
+EventGroupHandle_t sntp_event_group;
+
+bool initialize_sntp(void)
 {
-    char strftime_buf[64];
+    bool ret = false;
+    sntp_event_group = xEventGroupCreate();
+    xEventGroupClearBits(sntp_event_group, SNTP_SUCCESS_BIT);
+
     printf("Initializing SNTP\n");
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
     sntp_setservername(0, "fr.pool.ntp.org");
@@ -23,24 +29,33 @@ void initialize_sntp(void)
             wifi_event_group ,
             CONNECTED_BIT,
             pdFALSE,        // Don't clear bit after waiting
-            pdFALSE,
-            20000 / portTICK_PERIOD_MS);
+            pdTRUE,
+            5000 / portTICK_PERIOD_MS);
 
-    if(got_network) {
-        int retry_count = 10;
+    if(got_network & CONNECTED_BIT) {
+        printf("Got network !\n");
+        int retry_count = 20;
         while(timeinfo.tm_year < (2016 - 1900) && ++retry < retry_count) {
             printf("Waiting for system time to be set... (%d/%d)\n", retry, retry_count);
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            vTaskDelay(500 / portTICK_PERIOD_MS);
             time(&now);
             localtime_r(&now, &timeinfo);
         }
+        if(retry< retry_count) {
+            printf("Got NTP\n");
+            xEventGroupSetBits(sntp_event_group, SNTP_SUCCESS_BIT);
+            ret = true;
+        } else {
+            printf("Can't get NTP\n");
+            xEventGroupSetBits(sntp_event_group, SNTP_FAILURE_BIT);
+        }
 
-        setenv("TZ", "GMT+2/-2,M10.5.0/-1", 1);
-        tzset();
-        localtime_r(&now, &timeinfo);
-        strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-        printf("The current date/time is: %s\n", strftime_buf);
+    } else {
+        printf("Can't get network for NTP\n");
+        xEventGroupSetBits(sntp_event_group, SNTP_FAILURE_BIT);
+        ret = false;
     }
 
     sntp_stop();
+    return ret;
 }

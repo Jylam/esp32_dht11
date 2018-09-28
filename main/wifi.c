@@ -20,7 +20,7 @@ esp_err_t event_handler(void *ctx, system_event_t *event)
             printf("Connected !\n");
             break;
         case SYSTEM_EVENT_STA_DISCONNECTED:
-            printf("Disconnected\n");
+            //printf("Disconnected\n");
             xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
             if(xEventGroupGetBits(wifi_event_group) & CONNECTION_NEEDED_BIT) {
                 esp_wifi_connect();

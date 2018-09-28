@@ -1,6 +1,9 @@
 /* Main Swarm32 file
 */
 #include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <sys/time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -25,8 +28,8 @@ uint64_t get_time_us(void) {
     uint32_t sec, us;
     gettimeofday(&tv, NULL);
     (sec) = tv.tv_sec;
-	(us) = tv.tv_usec;
-	return (sec*1000000)+us;
+    (us) = tv.tv_usec;
+    return (sec*1000000)+us;
 }
 
 struct dht_result {
@@ -43,6 +46,9 @@ void DHT_task(void *pvParameter) {
     int valid_count = 0;
 
     res->valid = false;
+
+    // Wait a bit, the DHT needs time to init
+    vTaskDelay(1000 / portTICK_RATE_MS);
 
     for(int i=0; i<5; i++ ) {
         if(dht_get_data() == DHT_OK) {
@@ -65,7 +71,10 @@ void DHT_task(void *pvParameter) {
 }
 
 void SNTP_task(void *ptr) {
-    initialize_sntp();
+    bool res = initialize_sntp();
+    if(res) {
+
+    }
     vTaskDelete(NULL);
 }
 
@@ -85,14 +94,12 @@ void app_main() {
     xTaskCreate(&SNTP_task, "SNTP_task", 2048, NULL, configMAX_PRIORITIES, &sntp_handle);
 
     // Configure DHT
-	dht_set_pin(GPIO_NUM_27);
-	dht_set_type(DHT_TYPE11);
+    dht_set_pin(GPIO_NUM_27);
+    dht_set_type(DHT_TYPE11);
 
-    // Wait a bit, the DHT needs time to init
-    vTaskDelay(1000 / portTICK_RATE_MS);
     // Run DHT task
     xTaskCreate(&DHT_task, "DHT_task", 20480, &dht_result, configMAX_PRIORITIES, &dht_handle);
-	vTaskDelay(100 / portTICK_RATE_MS);
+    vTaskDelay(100 / portTICK_RATE_MS);
 
     // Wait for DHT task completion
     while(eTaskGetState(dht_handle) != eReady) { // ??? should be eDelete ?
@@ -102,11 +109,34 @@ void app_main() {
         printf("Got measurement : %f %f\n", dht_result.temp/1000.0, dht_result.humi/1000.0);
     }
 
+    // Wait for SNTP
+    int got_sntp = xEventGroupWaitBits(
+            sntp_event_group ,
+            SNTP_SUCCESS_BIT | SNTP_FAILURE_BIT,
+            pdFALSE,        // Don't clear bit after waiting
+            pdFALSE,
+            20000 / portTICK_PERIOD_MS);
+
+    // Got NTP date, which also means we have a wifi connection and some sort of internet access
+    if(got_sntp & SNTP_SUCCESS_BIT) {
+        char strftime_buf[64];
+        time_t now = 0;
+        struct tm timeinfo = { 0 };
+        setenv("TZ", "GMT+2/-2,M10.5.0/-1", 1);
+        tzset();
+        localtime_r(&now, &timeinfo);
+        strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+        printf("The current date/time is: %s\n", strftime_buf);
+    } else if(got_sntp & SNTP_FAILURE_BIT) {
+        printf("Can't get NTP date\n");
+    } else {
+        printf("SNTP Timeout\n");
+    }
+
     printf("Sleeping for %fs...\n", SLEEP_TIME_US/1000000.0);
     fflush(stdout);
 
-
-    wifi_deinit();
+//    wifi_deinit();
 
     esp_deep_sleep(SLEEP_TIME_US);
 }

@@ -215,7 +215,7 @@ int dht_get_data(void) {
     if( xSemaphoreTake(message_semaphore, (DHT_RESPONSE_TIMEOUT_US/1000) / portTICK_PERIOD_MS) != pdTRUE) {
             gpio_uninstall_isr_service();
             ret = DHT_TIMEOUT_ERROR;
-            printf("Timeout, %d edges\n", isr_count);
+            printf("DHT11 Timeout, %d edges\n", isr_count);
             goto end;
     }
 
