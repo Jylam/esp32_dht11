@@ -21,7 +21,7 @@
 
 
 
-#define SLEEP_TIME_S  10//(10*60)
+#define SLEEP_TIME_S  (10*60)
 #define SLEEP_TIME_US (SLEEP_TIME_S*1000*1000)
 
 uint64_t get_time_us(void) {
@@ -76,6 +76,34 @@ void SNTP_task(void *ptr) {
     vTaskDelete(NULL);
 }
 
+esp_err_t http_event_handler(esp_http_client_event_t *evt)
+{
+    printf("HTTP EVENT %d\n", evt->event_id);
+    switch(evt->event_id) {
+        case HTTP_EVENT_ERROR:
+            break;
+        case HTTP_EVENT_ON_CONNECTED:
+            break;
+        case HTTP_EVENT_HEADER_SENT:
+            break;
+        case HTTP_EVENT_ON_HEADER:
+            printf("%.*s", evt->data_len, (char*)evt->data);
+            break;
+        case HTTP_EVENT_ON_DATA:
+            if (!esp_http_client_is_chunked_response(evt->client)) {
+                printf("%.*s", evt->data_len, (char*)evt->data);
+            }
+
+            break;
+        case HTTP_EVENT_ON_FINISH:
+            break;
+        case HTTP_EVENT_DISCONNECTED:
+            break;
+    }
+    return ESP_OK;
+}
+
+
 void app_main() {
     TaskHandle_t dht_handle;
     TaskHandle_t sntp_handle;
@@ -125,7 +153,33 @@ void app_main() {
         localtime_r(&now, &timeinfo);
         strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
         printf("The current date/time is: %s (%d)\n", strftime_buf, (unsigned int)now);
-    } else if(got_sntp & SNTP_FAILURE_BIT) {
+
+        char post_data[256] = "";
+        snprintf(post_data, 255, "http://frob.fr/SWARM32/?time=%u&temp=%d&humi=%d&reset=%d",  (unsigned int)now, dht_result.temp, dht_result.humi, reset_reason);
+
+        /* Send HTTP message*/
+        esp_http_client_config_t config = {
+            .url = post_data,
+            .event_handler = http_event_handler,
+        };
+
+
+        esp_http_client_handle_t client = esp_http_client_init(&config);
+
+        //esp_http_client_set_method(client, HTTP_METHOD_POST);
+        //esp_http_client_set_post_field(client, post_data, strlen(post_data));
+
+        esp_err_t err = esp_http_client_perform(client);
+
+        if (err == ESP_OK) {
+            printf("Status = %d, content_length = %d\n",
+                    esp_http_client_get_status_code(client),
+                    esp_http_client_get_content_length(client));
+        }
+
+        esp_http_client_cleanup(client);
+    }
+    else if(got_sntp & SNTP_FAILURE_BIT) {
         printf("Can't get NTP date\n");
     } else {
         printf("SNTP Timeout\n");
@@ -134,7 +188,7 @@ void app_main() {
     printf("Sleeping for %fs...\n", SLEEP_TIME_US/1000000.0);
     fflush(stdout);
 
-//    wifi_deinit();
+    //    wifi_deinit();
 
     esp_deep_sleep(SLEEP_TIME_US);
 }
