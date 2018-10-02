@@ -21,8 +21,8 @@
 
 
 
-#define SLEEP_TIME_S  (10*60)
-#define SLEEP_TIME_US (SLEEP_TIME_S*1000*1000)
+#define SLEEP_TIME_S  ((uint64_t)(60*60))
+#define SLEEP_TIME_US ((uint64_t)(SLEEP_TIME_S*1000*1000))
 
 uint64_t get_time_us(void) {
     struct timeval tv = { .tv_sec = 0, .tv_usec = 0 };
@@ -78,7 +78,7 @@ void SNTP_task(void *ptr) {
 
 esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
-    printf("HTTP EVENT %d\n", evt->event_id);
+    //printf("HTTP EVENT %d\n", evt->event_id);
     switch(evt->event_id) {
         case HTTP_EVENT_ERROR:
             break;
@@ -87,13 +87,13 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
         case HTTP_EVENT_HEADER_SENT:
             break;
         case HTTP_EVENT_ON_HEADER:
-            printf("%.*s", evt->data_len, (char*)evt->data);
+            //printf("%.*s", evt->data_len, (char*)evt->data);
             break;
         case HTTP_EVENT_ON_DATA:
-            if (!esp_http_client_is_chunked_response(evt->client)) {
-                printf("%.*s", evt->data_len, (char*)evt->data);
-            }
-
+            //if (!esp_http_client_is_chunked_response(evt->client)) {
+            //    printf("%.*s", evt->data_len, (char*)evt->data);
+            //}
+            printf("Got answer from the HTTP server\n");
             break;
         case HTTP_EVENT_ON_FINISH:
             break;
