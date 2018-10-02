@@ -103,6 +103,19 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+char unique_id[13]; // MAC is 6 bytes, in hex 12 bytes + trailing \0 -> 13 bytes
+char *get_unique_id_str(void) {
+    uint8_t mac[6] = {0};
+    esp_err_t err = esp_efuse_mac_get_default(mac);
+    if(err != ESP_OK) {
+        memset(unique_id, 0, sizeof(unique_id));
+        return NULL;
+    }
+
+    snprintf(unique_id, 13, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return unique_id;
+}
+
 
 void app_main() {
     TaskHandle_t dht_handle;
@@ -155,7 +168,7 @@ void app_main() {
         printf("The current date/time is: %s (%d)\n", strftime_buf, (unsigned int)now);
 
         char post_data[256] = "";
-        snprintf(post_data, 255, "http://frob.fr/SWARM32/?time=%u&temp=%d&humi=%d&reset=%d",  (unsigned int)now, dht_result.temp, dht_result.humi, reset_reason);
+        snprintf(post_data, 256, "http://frob.fr/SWARM32/?id=%s&time=%u&temp=%d&humi=%d&reset=%d", get_unique_id_str() ,(unsigned int)now, dht_result.temp, dht_result.humi, reset_reason);
 
         /* Send HTTP message*/
         esp_http_client_config_t config = {
