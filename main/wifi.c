@@ -54,7 +54,7 @@ int wifi_init(void) {
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
     wifi_config_t sta_config = {
         .sta = {
-            .ssid = "Revolution",
+            .ssid = "ACAB_24",
             .password = "anneanne",
             .bssid_set = false
         }
