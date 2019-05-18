@@ -33,7 +33,6 @@ bool initialize_sntp(void)
             5000 / portTICK_PERIOD_MS);
 
     if(got_network & CONNECTED_BIT) {
-        printf("Got network !\n");
         int retry_count = 20;
         while(timeinfo.tm_year < (2016 - 1900) && ++retry < retry_count) {
             vTaskDelay(500 / portTICK_PERIOD_MS);

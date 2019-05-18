@@ -17,7 +17,7 @@ esp_err_t event_handler(void *ctx, system_event_t *event)
     //printf("Wifi Event ID : %08X\n", event->event_id);
     switch(event->event_id) {
         case SYSTEM_EVENT_STA_CONNECTED:
-            printf("Connected !\n");
+            printf("Connected to WIFI\n");
             break;
         case SYSTEM_EVENT_STA_DISCONNECTED:
             //printf("Disconnected\n");
@@ -32,7 +32,7 @@ esp_err_t event_handler(void *ctx, system_event_t *event)
             break;
         case SYSTEM_EVENT_STA_GOT_IP:
             xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
-            printf("Got IP !\n");
+            printf("Got IP\n");
             break;
         default:
             printf("Unknown event\n");

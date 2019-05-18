@@ -22,7 +22,7 @@
 
 
 
-#define SLEEP_TIME_S  ((uint64_t)(60*60))
+#define SLEEP_TIME_S  ((uint64_t)(60))  // (60*60)
 #define SLEEP_TIME_US ((uint64_t)(SLEEP_TIME_S*1000*1000))
 
 uint64_t get_time_us(void) {
@@ -87,7 +87,7 @@ void app_main() {
     esp_reset_reason_t reset_reason = rtc_get_reset_reason(0); // 1: power-on    5: deep-sleep
 
 
-    printf("Swarm32-plants (c) Jylam 2018-2019\n");
+    printf("Swarm32-plants (c) Jylam 2018-2019\nBuild date: %s %s\n", __DATE__, __TIME__);
     nvs_flash_init();
 
     // Init wifi (returns almost immediately)
